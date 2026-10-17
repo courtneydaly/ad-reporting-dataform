@@ -1,0 +1,8 @@
+# Local runner (scripts/run_local.py)
+duckdb>=1.1
+sqlglot==30.21.0
+pandas>=2.0
+openpyxl>=3.1
+
+# Only for loading the data into BigQuery (scripts/load_to_bigquery.py)
+# google-cloud-bigquery>=3.0

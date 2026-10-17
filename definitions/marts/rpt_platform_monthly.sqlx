@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  description: "Monthly KPIs by platform for the dashboard. Every rate divides totals, never averages daily rates.",
+  columns: {
+    month_complete: "False for the month still in progress, so a partial month isn't compared with full ones.",
+    cost_per_key_event: "Total spend / total GA4 key events.",
+    roas: "GA4 purchase revenue / total spend.",
+    click_to_session_rate: "GA4 sessions / platform clicks. Low values point to tracking or landing page problems.",
+    platform_to_ga4_ratio: "Platform-reported conversions / GA4 key events. Platforms count view-throughs and their own attribution, so this is usually above 1."
+  }
+}
+
+SELECT
+  month,
+  platform,
+  MAX(date) = LAST_DAY(month) AS month_complete,
+  SUM(spend) AS spend,
+  SUM(clicks) AS clicks,
+  SUM(sessions) AS sessions,
+  SUM(key_events) AS key_events,
+  SUM(revenue) AS revenue,
+  SUM(platform_conversions) AS platform_conversions,
+  SAFE_DIVIDE(SUM(spend), SUM(key_events)) AS cost_per_key_event,
+  SAFE_DIVIDE(SUM(revenue), SUM(spend)) AS roas,
+  SAFE_DIVIDE(SUM(sessions), SUM(clicks)) AS click_to_session_rate,
+  SAFE_DIVIDE(SUM(platform_conversions), SUM(key_events)) AS platform_to_ga4_ratio
+FROM ${ref("mart_campaign_performance")}
+GROUP BY month, platform

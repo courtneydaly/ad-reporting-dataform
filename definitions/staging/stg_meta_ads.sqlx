@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  description: "Meta at date x ad set, in the shared platform columns. Keeps only the latest sync of each day, because Meta restates recent days.",
+  assertions: {
+    uniqueKey: ["date", "ad_group_id"],
+    nonNull: ["date", "campaign_id", "ad_group_id", "spend"],
+    rowConditions: ["spend >= 0", "clicks <= impressions"]
+  }
+}
+
+SELECT
+  CAST(date_start AS DATE) AS date,
+  'meta' AS platform,
+  CAST(campaign_id AS STRING) AS campaign_id,
+  campaign_name,
+  CAST(adset_id AS STRING) AS ad_group_id,
+  adset_name AS ad_group_name,
+  impressions,
+  inline_link_clicks AS clicks,
+  CAST(spend AS NUMERIC) AS spend,
+  CAST(conversions AS FLOAT64) AS platform_conversions,
+  CAST(conversion_value AS FLOAT64) AS platform_conversion_value
+FROM ${ref("ads_insights")}
+WHERE TRUE
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY date_start, adset_id
+  ORDER BY _airbyte_extracted_at DESC
+) = 1

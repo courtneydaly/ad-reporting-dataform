@@ -1,0 +1,7 @@
+data/
+__pycache__/
+.venv/
+node_modules/
+.df-credentials.json
+*.duckdb
+*.xlsx

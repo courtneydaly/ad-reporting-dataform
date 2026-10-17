@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  description: "Google Ads at date x ad group, in the shared platform columns. Cost converted from micros.",
+  assertions: {
+    uniqueKey: ["date", "ad_group_id"],
+    nonNull: ["date", "campaign_id", "ad_group_id", "spend"],
+    rowConditions: ["spend >= 0", "clicks <= impressions"]
+  }
+}
+
+SELECT
+  CAST(segments_date AS DATE) AS date,
+  'google_ads' AS platform,
+  CAST(campaign_id AS STRING) AS campaign_id,
+  campaign_name,
+  CAST(ad_group_id AS STRING) AS ad_group_id,
+  ad_group_name,
+  metrics_impressions AS impressions,
+  metrics_clicks AS clicks,
+  CAST(metrics_cost_micros AS NUMERIC) / 1000000 AS spend,
+  CAST(metrics_conversions AS FLOAT64) AS platform_conversions,
+  CAST(metrics_conversions_value AS FLOAT64) AS platform_conversion_value
+FROM ${ref("ad_group_performance")}
+WHERE TRUE
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY segments_date, ad_group_id
+  ORDER BY _airbyte_extracted_at DESC
+) = 1

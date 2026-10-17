@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  description: "Ad groups that spent money but never matched a GA4 session, or GA4 traffic that never matched any spend, over the whole period. Usually a utm_campaign or utm_content tag that doesn't match the platform's names."
+}
+
+SELECT
+  platform,
+  ANY_VALUE(campaign) AS campaign,
+  ANY_VALUE(ad_group) AS ad_group,
+  CASE WHEN SUM(sessions) = 0 THEN 'spend_only' ELSE 'sessions_only' END AS problem,
+  MIN(date) AS first_date,
+  MAX(date) AS last_date,
+  SUM(spend) AS spend,
+  SUM(sessions) AS sessions
+FROM ${ref("mart_campaign_performance")}
+GROUP BY platform, campaign_key, ad_group_key
+HAVING (SUM(spend) > 0 AND SUM(sessions) = 0)
+    OR (SUM(sessions) > 0 AND SUM(spend) = 0)

@@ -1,0 +1,13 @@
+config {
+  type: "view",
+  description: "All ad platforms in one table, at date x platform x campaign x ad group.",
+  assertions: {
+    uniqueKey: ["date", "platform", "ad_group_id"]
+  }
+}
+
+${["stg_google_ads", "stg_meta_ads", "stg_microsoft_ads"]
+  .map(m => `SELECT date, platform, campaign_id, campaign_name, ad_group_id, ad_group_name,
+                    impressions, clicks, spend, platform_conversions, platform_conversion_value
+             FROM ${ref(m)}`)
+  .join("\nUNION ALL\n")}

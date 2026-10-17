@@ -1,0 +1,28 @@
+config {
+  type: "test",
+  dataset: "rpt_platform_monthly"
+}
+
+-- Two days for one platform: $100 for 1 key event, then $100 for 9.
+-- Cost per key event is $200 / 10 = $20, not the $55.56 you'd get by averaging daily values.
+input "mart_campaign_performance" {
+  SELECT DATE '2026-03-01' AS date, DATE '2026-03-01' AS month, 'meta' AS platform, CAST(100 AS NUMERIC) AS spend, 100 AS clicks,
+         80 AS sessions, 1 AS key_events, 0.0 AS revenue, 2.0 AS platform_conversions
+  UNION ALL
+  SELECT DATE '2026-03-02', DATE '2026-03-01', 'meta', CAST(100 AS NUMERIC), 100, 80, 9, 0.0, 12.0
+}
+
+SELECT
+  DATE '2026-03-01' AS month,
+  'meta' AS platform,
+  FALSE AS month_complete,
+  CAST(200 AS NUMERIC) AS spend,
+  200 AS clicks,
+  160 AS sessions,
+  10 AS key_events,
+  0.0 AS revenue,
+  14.0 AS platform_conversions,
+  CAST(20 AS NUMERIC) AS cost_per_key_event,
+  0.0 AS roas,
+  0.8 AS click_to_session_rate,
+  1.4 AS platform_to_ga4_ratio

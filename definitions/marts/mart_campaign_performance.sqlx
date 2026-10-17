@@ -1,0 +1,70 @@
+config {
+  type: "table",
+  description: "Daily ad spend joined to GA4 results at date x platform x campaign x ad group. Starts on the first day of GA4 data, because the export can't backfill. match_status shows rows where only one side has data.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["platform", "campaign"]
+  },
+  assertions: {
+    uniqueKey: ["date", "platform", "campaign_key", "ad_group_key"],
+    nonNull: ["date", "month", "platform", "match_status"],
+    rowConditions: ["match_status IN ('matched', 'spend_only', 'sessions_only')"]
+  }
+}
+
+WITH ga4_start AS (
+  SELECT MIN(session_date) AS first_date
+  FROM ${ref("stg_ga4_sessions")}
+),
+
+ads AS (
+  SELECT
+    date,
+    platform,
+    ${constants.joinKey("campaign_name")} AS campaign_key,
+    ${constants.joinKey("ad_group_name")} AS ad_group_key,
+    ANY_VALUE(campaign_name) AS campaign,
+    ANY_VALUE(ad_group_name) AS ad_group,
+    SUM(impressions) AS impressions,
+    SUM(clicks) AS clicks,
+    SUM(spend) AS spend,
+    SUM(platform_conversions) AS platform_conversions,
+    SUM(platform_conversion_value) AS platform_conversion_value
+  FROM ${ref("int_ad_performance")}
+  WHERE date >= (SELECT first_date FROM ga4_start)
+  GROUP BY date, platform, campaign_key, ad_group_key
+),
+
+ga4 AS (
+  SELECT *
+  FROM ${ref("int_ga4_paid_sessions")}
+  WHERE date >= (SELECT first_date FROM ga4_start)
+)
+
+SELECT
+  COALESCE(ads.date, ga4.date) AS date,
+  DATE_TRUNC(COALESCE(ads.date, ga4.date), MONTH) AS month,
+  COALESCE(ads.platform, ga4.platform) AS platform,
+  COALESCE(ads.campaign_key, ga4.campaign_key) AS campaign_key,
+  COALESCE(ads.ad_group_key, ga4.ad_group_key) AS ad_group_key,
+  COALESCE(ads.campaign, ga4.utm_campaign) AS campaign,
+  COALESCE(ads.ad_group, ga4.utm_content) AS ad_group,
+  COALESCE(ads.impressions, 0) AS impressions,
+  COALESCE(ads.clicks, 0) AS clicks,
+  COALESCE(ads.spend, 0) AS spend,
+  COALESCE(ads.platform_conversions, 0) AS platform_conversions,
+  COALESCE(ads.platform_conversion_value, 0) AS platform_conversion_value,
+  COALESCE(ga4.sessions, 0) AS sessions,
+  COALESCE(ga4.key_events, 0) AS key_events,
+  COALESCE(ga4.revenue, 0) AS revenue,
+  CASE
+    WHEN ga4.date IS NULL THEN 'spend_only'
+    WHEN ads.date IS NULL THEN 'sessions_only'
+    ELSE 'matched'
+  END AS match_status
+FROM ads
+FULL OUTER JOIN ga4
+  ON ads.date = ga4.date
+  AND ads.platform = ga4.platform
+  AND ads.campaign_key = ga4.campaign_key
+  AND ads.ad_group_key = ga4.ad_group_key

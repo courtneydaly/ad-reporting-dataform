@@ -1,0 +1,87 @@
+config {
+  type: "table",
+  description: "Budget pacing by month x platform x campaign, as of the latest day of ad data. Uses all ad data, not just the GA4 period. Includes spend with no budget and budget with no spend.",
+  assertions: {
+    uniqueKey: ["month", "platform", "campaign_id"],
+    nonNull: ["month", "platform", "campaign_id", "pacing_status"]
+  },
+  columns: {
+    expected_spend_to_date: "Budget x days elapsed / days in month: where spend should be if it were spread evenly.",
+    pacing_index: "Spend to date / expected spend to date. 1.0 is exactly on pace.",
+    projected_spend: "Spend to date / days elapsed x days in month: where the month lands at the current daily rate.",
+    daily_spend_needed: "Remaining budget / remaining days: the daily spend that lands exactly on budget."
+  }
+}
+
+WITH as_of AS (
+  SELECT MAX(date) AS as_of_date FROM ${ref("int_ad_performance")}
+),
+
+spend AS (
+  SELECT
+    DATE_TRUNC(date, MONTH) AS month,
+    platform,
+    campaign_id,
+    ANY_VALUE(campaign_name) AS campaign_name,
+    SUM(spend) AS spend_to_date
+  FROM ${ref("int_ad_performance")}
+  GROUP BY month, platform, campaign_id
+),
+
+joined AS (
+  SELECT
+    COALESCE(b.month, s.month) AS month,
+    COALESCE(b.platform, s.platform) AS platform,
+    COALESCE(b.campaign_id, s.campaign_id) AS campaign_id,
+    COALESCE(s.campaign_name, b.campaign_name) AS campaign_name,
+    b.budget,
+    COALESCE(s.spend_to_date, 0) AS spend_to_date,
+    DATE_DIFF(LAST_DAY(COALESCE(b.month, s.month)), COALESCE(b.month, s.month), DAY) + 1 AS days_in_month,
+    as_of.as_of_date
+  FROM ${ref("stg_budgets")} AS b
+  FULL OUTER JOIN spend AS s
+    ON b.month = s.month AND b.platform = s.platform AND b.campaign_id = s.campaign_id
+  CROSS JOIN as_of
+),
+
+elapsed AS (
+  SELECT
+    *,
+    GREATEST(0, LEAST(days_in_month, DATE_DIFF(as_of_date, month, DAY) + 1)) AS days_elapsed
+  FROM joined
+),
+
+paced AS (
+  SELECT
+    *,
+    budget * days_elapsed / days_in_month AS expected_spend_to_date,
+    SAFE_DIVIDE(spend_to_date, budget * days_elapsed / days_in_month) AS pacing_index,
+    SAFE_DIVIDE(spend_to_date, days_elapsed) * days_in_month AS projected_spend
+  FROM elapsed
+)
+
+SELECT
+  month,
+  platform,
+  campaign_id,
+  campaign_name,
+  as_of_date,
+  days_in_month,
+  days_elapsed,
+  month = DATE_TRUNC(as_of_date, MONTH) AS is_current_month,
+  days_elapsed = days_in_month AS month_complete,
+  budget,
+  spend_to_date,
+  expected_spend_to_date,
+  pacing_index,
+  projected_spend,
+  budget - spend_to_date AS budget_remaining,
+  SAFE_DIVIDE(budget - spend_to_date, days_in_month - days_elapsed) AS daily_spend_needed,
+  CASE
+    WHEN budget IS NULL THEN 'No budget'
+    WHEN days_elapsed = 0 THEN 'Not started'
+    WHEN pacing_index > 1 + ${constants.PACING_TOLERANCE} THEN 'Over'
+    WHEN pacing_index < 1 - ${constants.PACING_TOLERANCE} THEN 'Under'
+    ELSE 'On pace'
+  END AS pacing_status
+FROM paced

@@ -1,0 +1,9 @@
+config {
+  type: "assertion",
+  description: "The pacing table holds every dollar of ad spend, including spend on campaigns with no budget."
+}
+
+SELECT *
+FROM (SELECT SUM(spend) AS spend FROM ${ref("int_ad_performance")}) AS expected,
+     (SELECT SUM(spend_to_date) AS spend FROM ${ref("rpt_pacing")}) AS actual
+WHERE ABS(expected.spend - actual.spend) > 0.01

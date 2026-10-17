@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  description: "One row per campaign per day of each budgeted month: cumulative spend next to the cumulative target, for the pacing line chart. Cumulative spend is null after the latest day of data.",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["platform", "campaign_id"]
+  },
+  assertions: {
+    uniqueKey: ["date", "platform", "campaign_id"]
+  }
+}
+
+WITH as_of AS (
+  SELECT MAX(date) AS as_of_date FROM ${ref("int_ad_performance")}
+),
+
+-- Every day of every budgeted month, so the target line runs to month end.
+spine AS (
+  SELECT
+    b.month,
+    b.platform,
+    b.campaign_id,
+    b.campaign_name,
+    b.budget,
+    day AS date,
+    DATE_DIFF(LAST_DAY(b.month), b.month, DAY) + 1 AS days_in_month
+  FROM ${ref("stg_budgets")} AS b,
+    UNNEST(GENERATE_DATE_ARRAY(b.month, LAST_DAY(b.month))) AS day
+),
+
+daily_spend AS (
+  SELECT date, platform, campaign_id, SUM(spend) AS spend
+  FROM ${ref("int_ad_performance")}
+  GROUP BY date, platform, campaign_id
+)
+
+SELECT
+  spine.date,
+  spine.month,
+  spine.platform,
+  spine.campaign_id,
+  spine.campaign_name,
+  spine.budget,
+  spine.month = DATE_TRUNC(as_of.as_of_date, MONTH) AS is_current_month,
+  CASE WHEN spine.date <= as_of.as_of_date THEN COALESCE(daily_spend.spend, 0) END AS spend,
+  CASE WHEN spine.date <= as_of.as_of_date THEN
+    SUM(COALESCE(daily_spend.spend, 0)) OVER (
+      PARTITION BY spine.month, spine.platform, spine.campaign_id
+      ORDER BY spine.date
+    )
+  END AS cumulative_spend,
+  spine.budget / spine.days_in_month AS daily_target,
+  spine.budget * EXTRACT(DAY FROM spine.date) / spine.days_in_month AS cumulative_target
+FROM spine
+CROSS JOIN as_of
+LEFT JOIN daily_spend
+  ON spine.date = daily_spend.date
+  AND spine.platform = daily_spend.platform
+  AND spine.campaign_id = daily_spend.campaign_id

@@ -1,0 +1,28 @@
+config {
+  type: "view",
+  description: "Microsoft Ads at date x ad group, in the shared platform columns.",
+  assertions: {
+    uniqueKey: ["date", "ad_group_id"],
+    nonNull: ["date", "campaign_id", "ad_group_id", "spend"],
+    rowConditions: ["spend >= 0", "clicks <= impressions"]
+  }
+}
+
+SELECT
+  CAST(TimePeriod AS DATE) AS date,
+  'microsoft_ads' AS platform,
+  CAST(CampaignId AS STRING) AS campaign_id,
+  CampaignName AS campaign_name,
+  CAST(AdGroupId AS STRING) AS ad_group_id,
+  AdGroupName AS ad_group_name,
+  Impressions AS impressions,
+  Clicks AS clicks,
+  CAST(Spend AS NUMERIC) AS spend,
+  CAST(Conversions AS FLOAT64) AS platform_conversions,
+  CAST(Revenue AS FLOAT64) AS platform_conversion_value
+FROM ${ref("ad_group_performance_report_daily")}
+WHERE TRUE
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY TimePeriod, AdGroupId
+  ORDER BY _airbyte_extracted_at DESC
+) = 1

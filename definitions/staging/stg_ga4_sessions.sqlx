@@ -1,0 +1,50 @@
+config {
+  type: "table",
+  description: "One row per GA4 session: its UTM source, medium, campaign, and content ((not set) when untagged), plus key events and purchase revenue.",
+  bigquery: {
+    partitionBy: "session_date"
+  },
+  assertions: {
+    uniqueKey: ["session_key"],
+    nonNull: ["session_key", "session_date", "source", "medium"]
+  }
+}
+
+WITH events AS (
+  SELECT
+    PARSE_DATE('%Y%m%d', event_date) AS event_date,
+    event_timestamp,
+    event_name,
+    CONCAT(
+      user_pseudo_id, '.',
+      CAST((SELECT p.value.int_value FROM UNNEST(event_params) AS p WHERE p.key = 'ga_session_id') AS STRING)
+    ) AS session_key,
+    collected_traffic_source,
+    ecommerce.purchase_revenue AS purchase_revenue
+  FROM ${ref("events_*")}
+),
+
+-- A session's traffic source is the first event in it that carries UTMs.
+with_source AS (
+  SELECT
+    *,
+    FIRST_VALUE(collected_traffic_source IGNORE NULLS) OVER (
+      PARTITION BY session_key
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS session_traffic
+  FROM events
+)
+
+SELECT
+  session_key,
+  MIN(event_date) AS session_date,
+  COALESCE(ANY_VALUE(session_traffic.manual_source), '(not set)') AS source,
+  COALESCE(ANY_VALUE(session_traffic.manual_medium), '(not set)') AS medium,
+  ANY_VALUE(session_traffic.manual_campaign_name) AS campaign,
+  ANY_VALUE(session_traffic.manual_content) AS content,
+  COUNTIF(event_name IN (${constants.quoted(constants.KEY_EVENTS)})) AS key_events,
+  COUNTIF(event_name = 'purchase') AS purchases,
+  COALESCE(SUM(purchase_revenue), 0) AS revenue
+FROM with_source
+GROUP BY session_key

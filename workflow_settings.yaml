@@ -1,0 +1,8 @@
+# Set defaultProject to your own GCP project before running.
+defaultProject: your-gcp-project-id
+defaultLocation: US
+defaultDataset: ad_reporting
+defaultAssertionDataset: ad_reporting_assertions
+dataformCoreVersion: 3.0.70
+vars:
+  ga4_dataset: analytics_123456789

@@ -1,0 +1,26 @@
+config {
+  type: "assertion",
+  description: "Combining the platforms neither drops nor double-counts spend. Returns any platform whose totals disagree."
+}
+
+WITH staged AS (
+  ${["stg_google_ads", "stg_meta_ads", "stg_microsoft_ads"]
+    .map(m => `SELECT platform, SUM(spend) AS spend FROM ${ref(m)} GROUP BY platform`)
+    .join("\n  UNION ALL\n  ")}
+),
+
+combined AS (
+  SELECT platform, SUM(spend) AS spend
+  FROM ${ref("int_ad_performance")}
+  GROUP BY platform
+)
+
+SELECT
+  COALESCE(staged.platform, combined.platform) AS platform,
+  staged.spend AS staged_spend,
+  combined.spend AS combined_spend
+FROM staged
+FULL OUTER JOIN combined USING (platform)
+WHERE staged.spend IS NULL
+   OR combined.spend IS NULL
+   OR ABS(staged.spend - combined.spend) > 0.01

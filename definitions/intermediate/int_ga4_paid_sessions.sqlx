@@ -1,0 +1,29 @@
+config {
+  type: "view",
+  description: "GA4 sessions from paid ads, mapped to their ad platform and rolled up to date x campaign x ad group (utm_campaign x utm_content)."
+}
+
+WITH sessions AS (
+  SELECT
+    session_date AS date,
+    ${constants.platformFromUtm("source", "medium")} AS platform,
+    campaign,
+    content,
+    key_events,
+    revenue
+  FROM ${ref("stg_ga4_sessions")}
+)
+
+SELECT
+  date,
+  platform,
+  ${constants.joinKey("campaign")} AS campaign_key,
+  ${constants.joinKey("content")} AS ad_group_key,
+  ANY_VALUE(campaign) AS utm_campaign,
+  ANY_VALUE(content) AS utm_content,
+  COUNT(*) AS sessions,
+  SUM(key_events) AS key_events,
+  SUM(revenue) AS revenue
+FROM sessions
+WHERE platform IS NOT NULL
+GROUP BY date, platform, campaign_key, ad_group_key

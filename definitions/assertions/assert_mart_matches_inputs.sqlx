@@ -1,0 +1,25 @@
+config {
+  type: "assertion",
+  description: "From the first GA4 day on, the final table holds exactly the spend of the combined ad data and exactly the paid sessions from GA4. The full outer join must not lose or duplicate either side."
+}
+
+WITH ga4_start AS (
+  SELECT MIN(session_date) AS first_date FROM ${ref("stg_ga4_sessions")}
+),
+
+expected AS (
+  SELECT
+    (SELECT SUM(spend) FROM ${ref("int_ad_performance")}
+      WHERE date >= (SELECT first_date FROM ga4_start)) AS spend,
+    (SELECT SUM(sessions) FROM ${ref("int_ga4_paid_sessions")}) AS sessions
+),
+
+actual AS (
+  SELECT SUM(spend) AS spend, SUM(sessions) AS sessions
+  FROM ${ref("mart_campaign_performance")}
+)
+
+SELECT *
+FROM expected, actual
+WHERE ABS(expected.spend - actual.spend) > 0.01
+   OR expected.sessions != actual.sessions

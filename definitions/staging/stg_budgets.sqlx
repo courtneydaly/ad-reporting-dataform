@@ -1,0 +1,17 @@
+config {
+  type: "view",
+  description: "Monthly budget per campaign, one row per month x platform x campaign.",
+  assertions: {
+    uniqueKey: ["month", "platform", "campaign_id"],
+    nonNull: ["month", "platform", "campaign_id", "budget"],
+    rowConditions: ["budget >= 0", "month = DATE_TRUNC(month, MONTH)"]
+  }
+}
+
+SELECT
+  month,
+  platform,
+  CAST(campaign_id AS STRING) AS campaign_id,
+  campaign_name,
+  CAST(budget AS NUMERIC) AS budget
+FROM ${ref("monthly_budgets")}
